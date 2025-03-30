@@ -1,20 +1,29 @@
 # Папка, где находятся файлы EVTX
-$inputFolder = "C:\путь\к\папке"
+$inputFolder = "D:/evtx"
 
-# Папка, куда сохранять LOG файлы (изменить при необходимости)
-$outputFolder = "C:\ConvertedLogs"
+# Папка, куда сохранять XML файлы
+$outputFolder = "D:/Logs"
 
 # Создаём папку, если её нет
 New-Item -ItemType Directory -Path $outputFolder -Force
 
-# Находим все файлы EVTX и конвертируем их в LOG
+# Находим все файлы EVTX и конвертируем их в XML
 Get-ChildItem -Path $inputFolder -Recurse -Filter "*.evtx" | ForEach-Object {
-    $logPath = "$outputFolder\$($_.BaseName).log"
-    wevtutil qe $_.FullName /f:text > $logPath
-    Write-Host "Файл $($_.FullName) -> $logPath"
+    $xmlPath = "$outputFolder\$($_.BaseName).xml"
+    try {
+        # Используем Get-WinEvent для чтения .evtx
+        $events = Get-WinEvent -Path $_.FullName
+        
+        # Экспортируем события в XML
+        $events | Export-Clixml -Path $xmlPath
+        Write-Host "File $($_.FullName) -> $xmlPath"
+    }
+    catch {
+        Write-Host "Error processing file $($_.FullName): $_"
+    }
 }
 
-Write-Host "Конвертация завершена!"
+Write-Host "Conversion completed!"
 
 Get-ChildItem -Path "C:\путь\к\папке" -Recurse -File | Select-String -Pattern "текст для поиска" -List
 
