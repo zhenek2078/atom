@@ -1,6 +1,5 @@
-2. Монтирование образов
+1. Монтирование образов
 Windows образ: Для монтирования в VirtualBox:
-
 VBoxManage convertfromraw image.vdi image.vmdk
 После чего можно запустить виртуальную машину и монтировать образ через интерфейс.
 
@@ -9,9 +8,8 @@ qemu-img convert -f vdi -O raw image.vdi image.raw
 sudo mount -o loop image.raw /mnt
 Это позволит вам работать с файлами образа как с обычной файловой системой.
 
-3. Анализ файловой системы
+2. Анализ файловой системы
 Для Windows:
-
 Проанализировать журнал событий с помощью Event Viewer или команд:
 wevtutil qe Security /f:text
 wevtutil qe System /f:text
@@ -26,7 +24,6 @@ reg query HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run
 Проанализировать Windows Event Logs и Registry.
 
 Для Linux:
-
 Просмотреть файлы в директориях /var/log (особенно auth.log, syslog, messages, dmesg) на наличие подозрительных действий.
 cat /var/log/auth.log
 cat /var/log/syslog
@@ -37,13 +34,8 @@ cat /home/<user>/.bash_history
 cat /etc/passwd
 cat /etc/group
 
-Периодически проверяйте наличие подозрительных процессов:
-ps aux
-top
-
-4. Поиск вредоносных программ
+3. Поиск вредоносных программ
 Windows:
-
 Проверьте наличие файлов с именами, которые могут быть связаны с вредоносным ПО (например, странные EXE-файлы).
 
 Используйте Sysinternals для мониторинга процессов, сервисов и автозагрузки.
@@ -51,29 +43,26 @@ Windows:
 Изучите наличие ключей реестра, связанных с программами, которые могут быть использованы злоумышленниками для установления устойчивого доступа.
 
 Linux:
-
 Изучите все исполнимые файлы в директориях /bin, /usr/bin, /sbin, /usr/sbin, и проверьте их подписи и хеши.
 
 Проверьте наличие таймеров или cron-заданий:
 cat /etc/crontab
 ls /etc/cron.d/
 
-5. Поиск следов атаки
+4. Поиск следов атаки
 Windows:
-
 Используйте утилиту RegRipper для извлечения информации из реестра о действиях пользователя или приложений.
 
 Проверьте логи доступа (например, через Internet Explorer или Edge). Используйте IEHistoryView для анализа истории браузера.
 
 Linux:
-
 Проанализируйте логи SSH-логинов:
 last -a
 grep "sshd" /var/log/auth.log
 
 Применяйте chkrootkit или rkhunter для поиска корневых шпионов.
 
-6. Восстановление данных
+5. Восстановление данных
 Для восстановления удаленных файлов используйте инструменты, такие как TestDisk или Recuva для Windows, и extundelete для Linux.
 
 Для extundelete (Linux):
@@ -188,3 +177,23 @@ sudo apt-get install extundelete
 Монтируйте файловую систему в режиме только для чтения (если она не смонтирована).
 Используйте команду для восстановления файлов:
 sudo extundelete /dev/sda1 --restore-all
+
+
+Логи PostgreSQL:
+1. Каталог данных PostgreSQL (по умолчанию)
+Обычно логи хранятся в каталоге data/pg_log:
+/var/lib/postgresql/<версия>/main/log
+или
+/var/lib/pgsql/<версия>/data/log
+(Зависит от дистрибутива и способа установки PostgreSQL.)
+
+2. Стандартные системные каталоги логов
+Некоторые дистрибутивы записывают логи в стандартные каталоги:
+Debian/Ubuntu:
+/var/log/postgresql/postgresql.log
+CentOS/RHEL/Fedora:
+/var/lib/pgsql/<версия>/data/pg_log/
+Arch Linux:
+/var/log/postgres.log
+
+3. journalctl -u postgresql --no-pager
