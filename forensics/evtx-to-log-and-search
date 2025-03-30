@@ -15,3 +15,7 @@ Get-ChildItem -Path $inputFolder -Recurse -Filter "*.evtx" | ForEach-Object {
 }
 
 Write-Host "Конвертация завершена!"
+
+Get-ChildItem -Path "C:\путь\к\папке" -Recurse -File | Select-String -Pattern "текст для поиска" -List
+
+-List - возвращает только первое совпадение
