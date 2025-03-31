@@ -1,0 +1,44 @@
+sudo apt install sshpass
+
+nano send.sh
+
+#!/bin/bash
+
+DB_NAME="mining_db"          # Имя базы данных
+DB_USER="postgres"           # Пользователь БД
+DB_HOST="localhost"          # Если БД на другой машине - укажи IP
+ARCHIVE_DIR="/tmp/archive"   # Локальная папка для временного хранения
+REMOTE_SERVER="10.15.10.150" # Сервер холодного хранения
+REMOTE_DIR="/crypto-folder"  # Папка на удаленном сервере
+DATE=$(date +"%Y-%m-%d")     # Текущая дата
+
+# Создаем каталог, если он не существует
+mkdir -p $ARCHIVE_DIR
+
+# Формируем SQL-запрос для выгрузки данных старше 15 лет
+EXPORT_FILE="$ARCHIVE_DIR/mining_data_$DATE.csv"
+
+echo "Выгружаем данные старше 15 лет..."
+psql -U $DB_USER -d $DB_NAME -c "\copy (SELECT * FROM mining_data WHERE extraction_date < NOW() - INTERVAL '15 years') TO '$EXPORT_FILE' CSV HEADER;"
+
+echo "Передача архива на сервер $REMOTE_SERVER..."
+sshpass -p "At0mSk1lls" scp $EXPORT_FILE cod_admin@$REMOTE_SERVER:$REMOTE_DIR/
+
+if [ $? -eq 0 ]; then
+    echo "Файл успешно передан! Удаляем данные из БД..."
+    psql -U $DB_USER -d $DB_NAME -c "DELETE FROM mining_data WHERE extraction_date < NOW() - INTERVAL '15 years';"
+    echo "Старые данные удалены."
+else
+    echo "Ошибка передачи файла!"
+fi
+
+echo "Очистка временных файлов..."
+rm -f $EXPORT_FILE
+echo "Процесс завершен."
+
+chmod +x send.sh
+./send.sh
+
+Или руками сначала скопировать в csv, потом отправить csv на DC-STORAGE, затем удалить
+
+mining_data - таблица, extraction_date - столбец с датой
