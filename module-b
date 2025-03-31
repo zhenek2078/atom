@@ -510,6 +510,8 @@ systemctl restart nfs-server
 apt install nfs-common libpam-mount
 Проверить, чтобы были группы пользователей (обязательно, чтобы совпадали GID):
 cat /etc/group
+Если что поменять GID группы на DC-STORAGE (поставить такие же значения, как на клиентах):
+sudo groupmod -g <новый_GID> <имя_группы>
 
 Редактируем PAM-mount:
 nano /etc/security/pam_mount.conf.xml:
