@@ -1,0 +1,441 @@
+# 1. Настроить везде сетевые интерфейсы, если не настроены:
+## 1.1. Отключаем NetworkManager, если включен:
+systemctl status NetworkManager
+systemctl stop NetworkManager
+systemctl disable NetworkManager
+## 1.2. Через networking:
+nano /etc/network/interfaces
+auto eth0
+iface eth0 inet static
+address x.x.x.x
+netmask x.x.x.x
+gateway x.x.x.x
+dns-nameservers x.x.x.x x.x.x.x
+systemctl restart networking
+## 1.3. DNS:
+nano /etc/resolv.conf
+nameserver x.x.x.x
+
+2. На пограничных роутерах настроить NAT:
+2.1. На всех делаем:
+nano /etc/sysctl.conf
+net.ipv4.ip_forward=1
+sysctl -p
+2.2. DC-RTR-1:
+iptabels -t nat -A POSTROUTING -s 10.15.10.0/24 -o ens3 -j MASQUERADE
+2.3. DC-RTR-2:
+iptabels -t nat -A POSTROUTING -s 10.15.10.0/24 -o ens3 -j MASQUERADE
+2.4. MSK-RTR:
+iptabels -t nat -A POSTROUTING -s 192.168.1.0/24 -o ens3 -j MASQUERADE
+2.5. YEKT-RTR:
+iptabels -t nat -A POSTROUTING -s 192.168.2.0/24 -o ens3 -j MASQUERADE
+2.6. Если вдруг маскардинг отвалится, то делаем статический NAT:
+iptables -t nat -A POSTROUTING -s 10.15.10.0/24 -o ens3 -j SNAT --to-source 100.200.100.20
+s - внутрення сеть, o - внешний интерфейс, to-source - внешний IP
+
+3. GRE
+3.1. DC-RTR-1:
+nano /etc/network/interfaces
+auto gre-msk
+iface gre-msk inet static
+address 10.7.7.1
+netmask 255.255.255.252
+pre-up ip tunnel add gre-msk mode gre remote 188.121.90.2 local 200.100.100.20 ttl 255
+post-up ip route add 192.168.1.0/24 via 10.7.7.2
+pre-down ip tunnel del gre-msk mode gre remote 188.121.90.2 local 200.100.100.20 ttl 255
+
+auto gre-yekt
+iface gre-yekt inet static
+address 10.6.6.1
+netmask 255.255.255.252
+pre-up ip tunnel add gre-yekt mode gre remote 88.8.8.27 local 200.100.100.20 ttl 255
+post-up ip route add 192.168.2.0/24 via 10.6.6.2
+pre-down ip tunnel del gre-yekt mode gre remote 88.8.8.27 local 200.100.100.20 ttl 255
+
+3.2. DC-RTR-2:
+nano /etc/network/interfaces
+auto gre-msk
+iface gre-msk inet static
+address 10.5.5.1
+netmask 255.255.255.252
+pre-up ip tunnel add gre-msk mode gre remote 188.121.90.2 local 100.200.100.20 ttl 255
+post-up ip route add 192.168.1.0/24 via 10.5.5.2
+pre-down ip tunnel del gre-msk mode gre remote 188.121.90.2 local 100.200.100.20 ttl 255
+
+auto gre-yekt
+iface gre-yekt inet static
+address 10.8.8.1
+netmask 255.255.255.252
+pre-up ip tunnel add gre-yekt mode gre remote 88.8.8.27 local 100.200.100.20 ttl 255
+post-up ip route add 192.168.2.0/24 via 10.8.8.2
+pre-down ip tunnel del gre-yekt mode gre remote 88.8.8.27 local 100.200.100.20 ttl 255
+
+3.3. MSK-RTR:
+nano /etc/network/interfaces
+auto gre-dc-rtr-1
+iface gre-dc-rtr-1 inet static
+address 10.7.7.2
+netmask 255.255.255.252
+pre-up ip tunnel add gre-dc-rtr-1 mode gre remote 200.100.100.20 local 188.121.90.2 ttl 255
+pre-down ip tunnel del gre-dc-rtr-1 mode gre remote 200.100.100.20 local 188.121.90.2 ttl 255
+
+auto gre-dc-rtr-2
+iface gre-dc-rtr-2 inet static
+address 10.5.5.2
+netmask 255.255.255.252
+pre-up ip tunnel add gre-dc-rtr-2 mode gre remote 100.200.100.20 local 188.121.90.2 ttl 255
+post-up ip route add 10.15.10.0/24 via 10.5.5.1
+post-up ip route add 192.168.2.0/24 via 10.5.5.1
+pre-down ip tunnel del gre-dc-rtr-2 mode gre remote 100.200.100.20 local 188.121.90.2 ttl 255
+
+3.4. YEKT-RTR:
+nano /etc/network/interfaces
+auto gre-dc-rtr-1
+iface gre-dc-rtr-1 inet static
+address 10.6.6.2
+netmask 255.255.255.252
+pre-up ip tunnel add gre-dc-rtr-1 mode gre remote 200.100.100.20 local 88.8.8.27 ttl 255
+post-up ip route add 10.15.10.0/24 via 10.6.6.1
+post-up ip route add 192.168.1.0/24 via 10.6.6.1
+pre-down ip tunnel del gre-dc-rtr-1 mode gre remote 200.100.100.20 local 88.8.8.27 ttl 255
+
+auto gre-dc-rtr-2
+iface gre-dc-rtr-2 inet static
+address 10.8.8.2
+netmask 255.255.255.252
+pre-up ip tunnel add gre-dc-rtr-2 mode gre remote 100.200.100.20 local 88.8.8.27 ttl 255
+pre-down ip tunnel del gre-dc-rtr-2 mode gre remote 100.200.100.20 local 88.8.8.27 ttl 255
+
+4. IPSec:
+4.1. На всех пограничных роутерах:
+apt install strongswan
+
+4.2. DC-RTR-1:
+nano /etc/ipsec.conf
+config setup
+  charondebug="all"
+  uniqueids=no
+  strictcrlpolicy=no
+conn gre-msk
+  authby=secret
+  left=200.100.100.20
+  right=188.121.90.2
+  leftprotoport=gre
+  rightprotoport=gre
+  type=tunnel
+  esp=aes256-sha1
+  ike=aes256-sha1-modp1024
+  auto=start
+conn gre-yekt
+  authby=secret
+  left=200.100.100.20
+  right=88.8.8.27
+  leftprotoport=gre
+  rightprotoport=gre
+  type=tunnel
+  esp=aes256-sha1
+  ike=aes256-sha1-modp1024
+  auto=start
+
+nano /etc/ipsec.secrets
+200.100.100.20 188.121.90.2 : PSK "At0mSk1lls"
+200.100.100.20 88.8.8.27 : PSK "At0mSk1lls"
+
+systemctl restart strongswan-starter ИЛИ ipsec start, проверить подключения – ipsec status
+
+4.3. DC-RTR-2:
+nano /etc/ipsec.conf
+config setup
+  charondebug="all"
+  uniqueids=no
+  strictcrlpolicy=no
+conn gre-msk
+  authby=secret
+  left=100.200.100.20
+  right=188.121.90.2
+  leftprotoport=gre
+  rightprotoport=gre
+  type=tunnel
+  esp=aes256-sha1
+  ike=aes256-sha1-modp1024
+  auto=start
+conn gre-yekt
+  authby=secret
+  left=100.200.100.20
+  right=88.8.8.27
+  leftprotoport=gre
+  rightprotoport=gre
+  type=tunnel
+  esp=aes256-sha1
+  ike=aes256-sha1-modp1024
+  auto=start
+
+nano /etc/ipsec.secrets
+100.200.100.20 188.121.90.2 : PSK "At0mSk1lls"
+100.200.100.20 88.8.8.27 : PSK "At0mSk1lls"
+
+systemctl restart strongswan-starter ИЛИ ipsec start, проверить подключения – ipsec status
+
+4.4. MSK-RTR:
+nano /etc/ipsec.conf
+config setup
+  charondebug="all"
+  uniqueids=no
+  strictcrlpolicy=no
+conn gre-dc-rtr-1
+  authby=secret
+  left=188.121.90.2
+  right=200.100.100.20
+  leftprotoport=gre
+  rightprotoport=gre
+  type=tunnel
+  esp=aes256-sha1
+  ike=aes256-sha1-modp1024
+  auto=start
+conn gre-dc-rtr-2
+  authby=secret
+  left=188.121.90.2
+  right=100.200.100.20
+  leftprotoport=gre
+  rightprotoport=gre
+  type=tunnel
+  esp=aes256-sha1
+  ike=aes256-sha1-modp1024
+  auto=start
+
+nano /etc/ipsec.secrets
+188.121.90.2 200.100.100.20 : PSK "At0mSk1lls"
+188.121.90.2 100.200.100.20 : PSK "At0mSk1lls"
+
+systemctl restart strongswan-starter ИЛИ ipsec start, проверить подключения – ipsec status
+
+4.5. YEKT-RTR:
+nano /etc/ipsec.conf
+config setup
+  charondebug="all"
+  uniqueids=no
+  strictcrlpolicy=no
+conn gre-dc-rtr-1
+  authby=secret
+  left=88.8.8.27
+  right=200.100.100.20
+  leftprotoport=gre
+  rightprotoport=gre
+  type=tunnel
+  esp=aes256-sha1
+  ike=aes256-sha1-modp1024
+  auto=start
+conn gre-dc-rtr-2
+  authby=secret
+  left=88.8.8.27
+  right=100.200.100.20
+  leftprotoport=gre
+  rightprotoport=gre
+  type=tunnel
+  esp=aes256-sha1
+  ike=aes256-sha1-modp1024
+  auto=start
+
+nano /etc/ipsec.secrets
+88.8.8.27 200.100.100.20 : PSK "At0mSk1lls"88.8.8.27
+100.200.100.20 : PSK "At0mSk1lls"
+
+systemctl restart strongswan-starter ИЛИ ipsec start, проверить подключения – ipsec status
+
+5. OSPF:
+5.1. На всех пограничных роутерах:
+apt install frr
+nano /etc/frr/daemons
+ospf=1
+
+5.2. DC-RTR-1:
+vtysh
+conf t
+router ospf
+network 10.6.6.0/30 area 0
+network 10.7.7.0/30 area 0
+exit
+interface gre-msk
+ip ospf authentication message-digest
+ip ospf message-digest-key 1 md5 C00lComp
+exit
+interface gre-yekt
+ip ospf authentication message-digest
+ip ospf message-digest-key 1 md5 C00lComp
+exit
+do write
+
+5.3. DC-RTR-2:
+vtysh
+conf t
+router ospf
+network 10.5.5.0/30 area 0
+network 10.8.8.0/30 area 0
+exit
+interface gre-msk
+ip ospf authentication message-digest
+ip ospf message-digest-key 1 md5 C00lComp
+exit
+interface gre-yekt
+ip ospf authentication message-digest
+ip ospf message-digest-key 1 md5 C00lComp
+exit
+do write
+
+5.4. MSK-RTR:
+vtysh
+conf t
+router ospf
+network 10.5.5.0/30 area 0
+network 10.7.7.0/30 area 0
+exit
+interface gre-dc-rtr-1
+ip ospf authentication message-digest
+ip ospf message-digest-key 1 md5 C00lComp
+exit
+interface gre-dc-rtr-2
+ip ospf authentication message-digest
+ip ospf message-digest-key 1 md5 C00lComp
+exit
+do write
+
+5.5. YEKT-RTR:
+vtysh
+conf t
+router ospf
+network 10.6.6.0/30 area 0
+network 10.8.8.0/30 area 0
+exit
+interface gre-dc-rtr-1
+ip ospf authentication message-digest
+ip ospf message-digest-key 1 md5 C00lComp
+exit
+interface gre-dc-rtr-2
+ip ospf authentication message-digest
+ip ospf message-digest-key 1 md5 C00lComp
+exit
+do write
+
+6. VRRP на DC-RTR-1 и DC-RTR-2:
+6.1. На двух:
+apt install keepalived
+
+6.2. DC-RTR-1:
+nano /etc/keepalived/keepalived.conf
+vrrp_instance VI_MSK {
+	state BACKUP
+	interface ens4
+	virtual_router_id 51
+	priority 100
+	advert_int 1
+	virtual_ipaddress {
+		10.15.10.1/24
+	}
+}
+vrrp_instance VI_YEKT {
+	state MASTER
+	interface ens4
+	virtual_router_id 52
+	priority 150
+	advert_int 1
+	virtual_ipaddress {
+		10.15.10.1/24
+	}
+}
+
+systemctl restart keepalived
+
+6.3. DC-RTR-2:
+nano /etc/keepalived/keepalived.conf
+vrrp_instance VI_MSK {
+	state MASTER
+	interface ens4
+	virtual_router_id 51
+	priority 150
+	advert_int 1
+	virtual_ipaddress {
+		10.15.10.1/24
+	}
+}
+vrrp_instance VI_YEKT {
+	state BACKUP
+	interface ens4
+	virtual_router_id 52
+	priority 100
+	advert_int 1
+	virtual_ipaddress {
+		10.15.10.1/24
+	}
+}
+
+systemctl restart keepalived
+
+7. Приоритеты маршрутов в MSK и YEKT до ЦОДа:
+7.1. MSK-RTR:
+nano /etc/mail_check.sh
+#!/bin/bash
+
+mail_ip=”10.15.10.100”
+main_dc=”10.5.5.1”
+backup_dc=”10.7.7.1”
+
+ping_test() {
+	ping -c 1 -W 1 $1 > /dev/null 2>&1
+	return $?
+}
+
+ping_test $mail_ip
+mail_is_up=$?
+ping_test $main_dc
+main_is_up=$?
+
+if [ $mail_is_up -eq 0 ]; then
+	if [ $main_is_up -eq 0 ]; then
+		ip route change 10.15.10.0/24 via $main_dc
+ip route change 192.168.2.0/24 via $main_dc
+	fi
+else
+	ip route change 10.15.10.0/24 via $backup_dc
+	ip route change 192.168.2.0/24 via $backup_dc
+fi
+
+chmod +x /etc/mail_check.sh
+
+Задачу cron из под root:
+crontab -e
+* * * * * /etc/mail_check.sh
+
+7.2. YEKT-RTR:
+nano /etc/mail_check.sh
+#!/bin/bash
+
+mail_ip=”10.15.10.100”
+main_dc=”10.6.6.1”
+backup_dc=”10.8.8.1”
+
+ping_test() {
+	ping -c 1 -W 1 $1 > /dev/null 2>&1
+	return $?
+}
+
+ping_test $mail_ip
+mail_is_up=$?
+ping_test $main_dc
+main_is_up=$?
+
+if [ $mail_is_up -eq 0 ]; then
+	if [ $main_is_up -eq 0 ]; then
+		ip route change 10.15.10.0/24 via $main_dc
+		ip route change 192.168.1.0/24 via $main_dc
+	fi
+else
+	ip route change 10.15.10.0/24 via $backup_dc
+	ip route change 192.168.1.0/24 via $backup_dc
+fi
+
+chmod +x /etc/mail_check.sh
+
+Задачу cron из под root:
+crontab -e
+* * * * * /etc/mail_check.sh
+
