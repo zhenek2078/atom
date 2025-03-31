@@ -706,6 +706,14 @@ if ($fromhost-ip == '192.168.2.150') and ($programname == 'apache2') then -?Apac
 $template ApacheLogsBilling,"/home/yekt_admin/Desktop/Logs/YEKT-BILLING/%PROGRAMNAME%.log"
 if ($fromhost-ip == '192.168.2.100') and ($programname == 'apache2') then -?ApacheLogsBilling
 
+Или такой шаблон (проверить, как запущен flask, если через apache2, отправлять его логи, если сохраняет свои, то посмотреть как (в отдельный файл или в syslog), посмотреть, как называются логи flask):
+Посмотреть в исходном коде: syslog_handler.ident = "flask", тогда programname - flask
+$template WebLogs,"/home/yekt_admin/Desktop/Logs/%HOSTNAME%/%PROGRAMNAME%.log"
+
+if ($fromhost-ip == "192.168.2.150" and $programname == "apache2") then ?WebLogs
+if ($fromhost-ip == "192.168.2.100" and $programname == "flask") then ?WebLogs
+& stop
+
 Перезапускаем rsyslog:
 systemctl restart rsyslog
 
@@ -730,6 +738,12 @@ input(type="imfile"
       Facility="local1")
 
 *.* @192.168.2.200:514
+
+Или:
+nano /etc/rsyslog.d/remote_logs.conf
+apache2.* @192.168.2.200:514
+
+Также для flask
 
 Перезапускаем:
 sudo systemctl restart rsyslog
