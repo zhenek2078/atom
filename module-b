@@ -32,6 +32,9 @@ iptabels -t nat -A POSTROUTING -s 192.168.2.0/24 -o ens3 -j MASQUERADE
 2.6. Если вдруг маскардинг отвалится, то делаем статический NAT:
 iptables -t nat -A POSTROUTING -s 10.15.10.0/24 -o ens3 -j SNAT --to-source 100.200.100.20
 s - внутрення сеть, o - внешний интерфейс, to-source - внешний IP
+2.7. Сохраняем правила:
+apt install netfilter-persistent
+netfilter-persistent save
 
 3. GRE
 3.1. DC-RTR-1:
@@ -113,29 +116,29 @@ apt install strongswan
 4.2. DC-RTR-1:
 nano /etc/ipsec.conf
 config setup
-  charondebug="all"
-  uniqueids=no
-  strictcrlpolicy=no
+	charondebug="all"
+	uniqueids=no
+	strictcrlpolicy=no
 conn gre-msk
-  authby=secret
-  left=200.100.100.20
-  right=188.121.90.2
-  leftprotoport=gre
-  rightprotoport=gre
-  type=tunnel
-  esp=aes256-sha1
-  ike=aes256-sha1-modp1024
-  auto=start
+	authby=secret
+	left=200.100.100.20
+	right=188.121.90.2
+	leftprotoport=gre
+	rightprotoport=gre
+	type=tunnel
+	esp=aes256-sha1
+	ike=aes256-sha1-modp1024
+	auto=start
 conn gre-yekt
-  authby=secret
-  left=200.100.100.20
-  right=88.8.8.27
-  leftprotoport=gre
-  rightprotoport=gre
-  type=tunnel
-  esp=aes256-sha1
-  ike=aes256-sha1-modp1024
-  auto=start
+	authby=secret
+	left=200.100.100.20
+	right=88.8.8.27
+	leftprotoport=gre
+	rightprotoport=gre
+	type=tunnel
+	esp=aes256-sha1
+	ike=aes256-sha1-modp1024
+	auto=start
 
 nano /etc/ipsec.secrets
 200.100.100.20 188.121.90.2 : PSK "At0mSk1lls"
@@ -146,29 +149,29 @@ systemctl restart strongswan-starter ИЛИ ipsec start, проверить по
 4.3. DC-RTR-2:
 nano /etc/ipsec.conf
 config setup
-  charondebug="all"
-  uniqueids=no
-  strictcrlpolicy=no
+	charondebug="all"
+	uniqueids=no
+	strictcrlpolicy=no
 conn gre-msk
-  authby=secret
-  left=100.200.100.20
-  right=188.121.90.2
-  leftprotoport=gre
-  rightprotoport=gre
-  type=tunnel
-  esp=aes256-sha1
-  ike=aes256-sha1-modp1024
-  auto=start
+	authby=secret
+	left=100.200.100.20
+	right=188.121.90.2
+	leftprotoport=gre
+	rightprotoport=gre
+	type=tunnel
+	esp=aes256-sha1
+	ike=aes256-sha1-modp1024
+	auto=start
 conn gre-yekt
-  authby=secret
-  left=100.200.100.20
-  right=88.8.8.27
-  leftprotoport=gre
-  rightprotoport=gre
-  type=tunnel
-  esp=aes256-sha1
-  ike=aes256-sha1-modp1024
-  auto=start
+	authby=secret
+	left=100.200.100.20
+	right=88.8.8.27
+	leftprotoport=gre
+	rightprotoport=gre
+	type=tunnel
+	esp=aes256-sha1
+	ike=aes256-sha1-modp1024
+	auto=start
 
 nano /etc/ipsec.secrets
 100.200.100.20 188.121.90.2 : PSK "At0mSk1lls"
@@ -179,29 +182,29 @@ systemctl restart strongswan-starter ИЛИ ipsec start, проверить по
 4.4. MSK-RTR:
 nano /etc/ipsec.conf
 config setup
-  charondebug="all"
-  uniqueids=no
-  strictcrlpolicy=no
+	charondebug="all"
+	uniqueids=no
+	strictcrlpolicy=no
 conn gre-dc-rtr-1
-  authby=secret
-  left=188.121.90.2
-  right=200.100.100.20
-  leftprotoport=gre
-  rightprotoport=gre
-  type=tunnel
-  esp=aes256-sha1
-  ike=aes256-sha1-modp1024
-  auto=start
+	authby=secret
+	left=188.121.90.2
+	right=200.100.100.20
+	leftprotoport=gre
+	rightprotoport=gre
+	type=tunnel
+	esp=aes256-sha1
+	ike=aes256-sha1-modp1024
+	auto=start
 conn gre-dc-rtr-2
-  authby=secret
-  left=188.121.90.2
-  right=100.200.100.20
-  leftprotoport=gre
-  rightprotoport=gre
-  type=tunnel
-  esp=aes256-sha1
-  ike=aes256-sha1-modp1024
-  auto=start
+	authby=secret
+	left=188.121.90.2
+	right=100.200.100.20
+	leftprotoport=gre
+	rightprotoport=gre
+	type=tunnel
+	esp=aes256-sha1
+	ike=aes256-sha1-modp1024
+	auto=start
 
 nano /etc/ipsec.secrets
 188.121.90.2 200.100.100.20 : PSK "At0mSk1lls"
@@ -212,29 +215,29 @@ systemctl restart strongswan-starter ИЛИ ipsec start, проверить по
 4.5. YEKT-RTR:
 nano /etc/ipsec.conf
 config setup
-  charondebug="all"
-  uniqueids=no
-  strictcrlpolicy=no
+	charondebug="all"
+	uniqueids=no
+	strictcrlpolicy=no
 conn gre-dc-rtr-1
-  authby=secret
-  left=88.8.8.27
-  right=200.100.100.20
-  leftprotoport=gre
-  rightprotoport=gre
-  type=tunnel
-  esp=aes256-sha1
-  ike=aes256-sha1-modp1024
-  auto=start
+	authby=secret
+	left=88.8.8.27
+	right=200.100.100.20
+	leftprotoport=gre
+	rightprotoport=gre
+	type=tunnel
+	esp=aes256-sha1
+	ike=aes256-sha1-modp1024
+	auto=start
 conn gre-dc-rtr-2
-  authby=secret
-  left=88.8.8.27
-  right=100.200.100.20
-  leftprotoport=gre
-  rightprotoport=gre
-  type=tunnel
-  esp=aes256-sha1
-  ike=aes256-sha1-modp1024
-  auto=start
+	authby=secret
+	left=88.8.8.27
+	right=100.200.100.20
+	leftprotoport=gre
+	rightprotoport=gre
+	type=tunnel
+	esp=aes256-sha1
+	ike=aes256-sha1-modp1024
+	auto=start
 
 nano /etc/ipsec.secrets
 88.8.8.27 200.100.100.20 : PSK "At0mSk1lls"88.8.8.27
@@ -972,3 +975,59 @@ subnet 192.168.1.0 netmask 255.255.255.0 {
 
 Перезапускаем:
 sudo systemctl restart isc-dhcp-server
+
+
+15. Настройка OpenConnect
+На CLOUD-VM качаем ocserv:
+apt install ocserv
+Создаем директорию, куда поместим сертификат:
+mkdir -p /etc/ocserv/certs
+Копируем туда сертификат с DC, выдаем права:
+chmod 600 server-key.pem
+Редактируем конфиг:
+nano /etc/ocserv/ocserv.conf:
+
+auth = "plain[/etc/ocserv/passwd]"
+tcp-port = 443
+udp-port = 443
+run-as-user = ocserv
+run-as-group = ocserv
+
+# === Сертификаты ===
+server-cert = /etc/ocserv/certs/server-cert.pem
+server-key = /etc/ocserv/certs/server-key.pem
+
+# === Сетевые настройки ===
+ipv4-network = 10.10.10.0 #IP VPN сети 
+ipv4-netmask = 255.255.255.0
+dns = 8.8.8.8
+
+# === Доступ пользователей ===
+default-domain = vpn.atomskills.ru
+max-clients = 16
+max-same-clients = 2
+keepalive = 300
+# === Пути до сетей DC, MSK, YEKT ===
+config_per_user = /etc/ocserv/config-per-user/ 
+
+Создаем файл с пользователями:
+touch /etc/ocserv/passwd
+chmod 600 /etc/ocserv/passwd
+
+Создаем пользователей:
+ocpasswd -c /etc/ocserv/passwd cod_admin
+Вводим пароль, повторяем. Создаем двух других пользователей.
+
+Создаем конфиги для юзеров, куда прописываем маршруты:
+mkdir -p /etc/ocserv/config-per-user
+nano /etc/ocserv/config-per-use/cod_admin:
+route = ip_сети
+chmod 600 /etc/ocserv/config-per-user/cod_admin
+
+Перезапускаем ocserv:
+systemctl restart ocserv
+systemctl status ocserv
+
+Проверяем подключение на REMOTE-TERMINAL:
+apt install openconnect
+openconnect --user=cod_admin vpn.atomskills.ru --passwd-on-stdin <<< “P@ssw0rd1234”
