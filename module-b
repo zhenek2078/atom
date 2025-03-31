@@ -1,9 +1,9 @@
-# 1. Настроить везде сетевые интерфейсы, если не настроены:
-## 1.1. Отключаем NetworkManager, если включен:
+1. Настроить везде сетевые интерфейсы, если не настроены:
+1.1. Отключаем NetworkManager, если включен:
 systemctl status NetworkManager
 systemctl stop NetworkManager
 systemctl disable NetworkManager
-## 1.2. Через networking:
+1.2. Через networking:
 nano /etc/network/interfaces
 auto eth0
 iface eth0 inet static
@@ -12,7 +12,7 @@ netmask x.x.x.x
 gateway x.x.x.x
 dns-nameservers x.x.x.x x.x.x.x
 systemctl restart networking
-## 1.3. DNS:
+1.3. DNS:
 nano /etc/resolv.conf
 nameserver x.x.x.x
 
@@ -392,6 +392,7 @@ main_is_up=$?
 if [ $mail_is_up -eq 0 ]; then
 	if [ $main_is_up -eq 0 ]; then
 		ip route change 10.15.10.0/24 via $main_dc
+		ip route change 192.168.2.0/24 via $main_dc
 ip route change 192.168.2.0/24 via $main_dc
 	fi
 else
@@ -439,3 +440,535 @@ chmod +x /etc/mail_check.sh
 crontab -e
 * * * * * /etc/mail_check.sh
 
+8. SSH в ЦОД:
+8.1. На всех машинах создаем пользователся cod_admin:
+sudo adduser cod_admin
+sudo usermod -aG sudo cod_admin
+Пароль на DC-MAILSERVER: P@ssw0rd1234
+Пароль на DC-STORAGE: At0mSk1lls
+
+8.2. Делаем доступ к sudo без пароля:
+visudo, в конец файла добавляем:
+cod_admin ALL=(ALL) NOPASSWD:ALL
+
+8.3. На DC-STORAGE создаем SSH-ключи:
+mkdir -p /ssh_keys
+ssh-keygen -t rsa -b 4096 -f /ssh_keys/id_rsa -N ""
+
+8.4. Копируем публичный ключ на DC-MAILSERVER:
+ssh-copy-id -i /ssh_keys/id_rsa.pub cod_admin@10.15.10.100
+
+8.5. Настройка SSH на DC-MAILSERVER:
+nano /etc/ssh/sshd_config
+PasswordAuthentication no
+ChallengeResponseAuthentication no
+UsePAM no
+AllowUsers cod_admin
+
+Добавляем iptables:
+iptables -A INPUT -p tcp -s 10.15.10.0/24 --dport 22 -j ACCEPT
+iptables -A INPUT -p tcp --dport 22 -j REJECT
+
+Сохраняем правила:
+netfilter-persistent save
+
+8.6. Настройка SSH на DC-STORAGE:
+nano /etc/ssh/sshd_config
+PasswordAuthentication yes
+UsePAM yes
+AllowUsers cod_admin
+
+Добавляем iptables:
+iptables -A INPUT -p tcp -s VPN --dport 22 -j ACCEPT
+iptables -A INPUT -p tcp --dport 22 -j REJECT
+
+Сохраняем правила:
+netfilter-persistent save
+
+9. Настройка NFS:
+9.1. DC-STORAGE:
+apt install nfs-kernel-server
+sudo mkdir -p /storage/it
+sudo mkdir -p /storage/office
+sudo groupadd IT
+sudo groupadd office
+sudo chown root:IT /storage/it
+sudo chown root:office /storage/office
+sudo chmod 1770 /storage/it
+sudo chmod 1770 /storage/office
+
+nano /etc/exports:
+/storage/it 192.168.1.0/24(rw,sync,no_subtree_check,root_squash)
+/storage/office 192.168.1.0/24(rw,sync,no_subtree_check,root_squash)
+exportfs -ra
+systemctl restart nfs-server
+
+9.2. На MSK-ADMINPC и MSK-WORKER:
+apt install nfs-common libpam-mount
+Проверить, чтобы были группы пользователей (обязательно, чтобы совпадали GID):
+cat /etc/group
+
+Редактируем PAM-mount:
+nano /etc/security/pam_mount.conf.xml:
+В секции <pam_mount> пишем:
+<volume user="*" fstype="nfs" server="10.15.10.150" path="/storage/it" mountpoint="~/Desktop/IT_Folder" options="vers=4" sgrp="IT"/>
+<volume user="*" fstype="nfs" server="10.15.10.150" path="/storage/office" mountpoint="~/Desktop/Office_Folder" options="vers=4" sgrp="office"/>
+
+Активируем PAM-mount:
+nano /etc/pam.d/common-session:
+session optional pam_mount.so
+
+10. Настройка LVM и бэкапов на DC-STORAGE:
+10.1. Ставим пакеты:
+apt install lvm2 cryptsetup inotify-tools rsync
+
+10.2. LVM:
+Создаем физические тома:
+sudo pvcreate /dev/vdb /dev/vdc /dev/vdd
+
+Создаем группу томов:
+sudo vgcreate vg_crypto /dev/vdb /dev/vdc /dev/vdd
+
+Создаем логический том:
+sudo lvcreate -l 100%FREE -n lv_secure vg_crypto
+
+Шифруем:
+sudo cryptsetup luksFormat /dev/vg_crypto/lv_secure
+Пароль: P@ssw0rd
+
+Открываем зашифрованный том:
+sudo cryptsetup luksOpen /dev/vg_crypto/lv_secure crypto_lv
+
+Форматируем:
+mkfs.ext4 /dev/mapper/crypto_lv
+
+Добавляем ключевой файл:
+dd if=/dev/random of=/root/luks_key bs=1024 count=4
+chmod 400 /root/luks_key
+
+Добавляем ключ в шифрованный раздел:
+cryptsetup luksAddKey /dev/vg_crypto/lv_secure /root/luks_key
+
+Настройка автоматического монтирования:
+sudo nano /etc/crypttab
+crypto_lv /dev/vg_crypto/lv_secure /root/luks_key luks
+sudo nano /etc/fstab
+/dev/mapper/crypto_lv /crypto-folder ext4 defaults 0 2
+systemctl daemon-reload
+
+10.3. Резервное копирование:
+nano /usr/local/bin/backup_save.sh
+#!/bin/bash
+SOURCE_DIR="/storage/office"
+DEST_DIR="/crypto-folder"
+backup_file() {
+    FILE=$1
+    DEST_PATH="${DEST_DIR}/$(basename "$FILE")"
+    if [[ "$(basename "$FILE" | tr '[:upper:]' '[:lower:]')" =~ save ]]; then
+        # Копирование файла
+        rsync -a --ignore-existing "$FILE" "$DEST_PATH"
+    fi
+}
+inotifywait -m -r -e create -e moved_to -e modify --format "%w%f" "$SOURCE_DIR" | while read FILE
+do
+    backup_file "$FILE"
+done
+
+chmod +x /usr/local/bin/backup_save.sh
+
+Добавляем юнит на запуск скрипта при старте системы:
+nano /etc/systemd/system/backup_save.service
+[Unit]
+Description=Backup Save Files Service
+After=network.target
+
+[Service]
+ExecStart=/usr/local/bin/backup_save.sh
+Restart=always
+User=root
+Group=root
+
+[Install]
+WantedBy=multi-user.target
+
+sudo systemctl daemon-reload
+sudo systemctl enable backup_save.service
+sudo systemctl start backup_save.service
+
+11. Настройка Zabbix на YEKT-DB:
+11.1. Перевод на HTTPS:
+Копируем ключ и сертификат в нужный каталог.
+Редактируем конфигурацию apache2:
+nano /etc/apache2/sites-available/000-default.conf
+
+Добавляем новую секцию, аналогично существующей, 80 порт потом комментируем, примерно должно быть так (указываем пути до сертификата и ключа, где они лежат):
+<VirtualHost *:443>
+ServerAdmin webmaster@localhost
+    DocumentRoot /var/www/html
+    SSLEngine on
+    SSLCertificateFile /etc/ssl/zabbix/zabbix.crt
+    SSLCertificateKeyFile /etc/ssl/zabbix/zabbix.key
+    ErrorLog ${APACHE_LOG_DIR}/error.log
+    CustomLog ${APACHE_LOG_DIR}/access.log combined
+</VirtualHost>
+
+Активируем SSL и перезапускаем Apache:
+a2enmod ssl
+systemctl restart apache2
+
+11.2. Добавление YEKT-RTR и YEKT-DB в мониторинг:
+apt install zabbix-agent
+
+Редактируем конфигурацию:
+nano /etc/zabbix/zabbix_agentd.conf:
+Server=192.168.2.150
+ServerActive=192.168.2.150
+Hostname=yetk-rtr
+
+Hostname - указать имена хостов YEKT-RTR и YEKT-DB.
+
+sudo systemctl restart zabbix-agent
+sudo systemctl enable zabbix-agent
+
+В веб-интерфейсе Zabbix на YEKT-DB (https://192.168.2.150/zabbix, Admin:zabbix) добавляем узлы:
+Настройки – Узлы сети – Создать узел сети
+Имя – yekt-rtr
+Шаблон – Linux filesystems by Zabbix agent
+Группа – Linux servers
+Интерфейс – 192.168.2.1
+Добавить
+
+Имя - имена, которые указывали в конфиге агента.
+
+Настройка триггера:
+Узлы сети – yetk-rtr – Триггеры – Создать новый триггер:
+Для ЦПУ – last(/yekt-rtr/system.cpu.util)>80 (Добавить – Элемент данных – Linux: CPU utilization)
+Для диска – last(/yekt-rtr/vfs.fs.size[/, pused])>90 (/: Space utilization)
+Критичность - Предупреждение
+
+Если нужно, чтобы был один триггер на ЦП и диск, то используем конструктор.
+Проверить работу можно: cat /dev/zero > /dev/null
+
+** На всякий случай отправка сообщения на почту **
+Настройка отправки сообщений на почту:
+Администрирование – Способ оповещений, нажимаем на Email, в параметрах указываем:
+SMTP сервер – mail.company.cool
+SMTP helo – company.cool
+SMTP email – zabbix@company.cool (проверить, чтобы такой пользователь был на почтовом сервере, если нет – создать)
+Можно проверить работу: «Тест» на admin@company.cool.
+
+Если не будет пользователя, создаем:
+Администрирование – Пользователи – Создать пользователя:
+Группа – Zabbix administrator
+Оповещения – Добавить:
+Тип – Email
+Отправлять на – admin@company.cool
+Права доступа – Роль – Super admin role (на другие роли почему-то не отправляет письма).
+Поменять язык – Настройка пользователя – Профиль – Язык – Русский
+
+Настройка отправки почты по триггеру:
+Настройка – Действие – Действие для триггера – Создать действие:
+Пишем имя, выбираем Условие:
+Тип – триггер
+Оператор – равно
+Триггер – наши созданные
+На вкладке «Операции», добавляем операцию, выбираем «Отправка пользователям» - admin.
+Отправка только через: EMAIL
+Пользовательское сообщение:
+Тема: Alert: {TRIGGER.NAME}
+Сообщение: Event: {EVENT.NAME} on {HOST.NAME} at {DATE}.
+
+12. Сбор логов с веб-серверов в YEKT:
+12.1. YEKT-WORKER:
+Проверяем, есть ли пользователь yekt_admin (cat /etc/passwd), если нет, создаем:
+adduser yekt_admin
+Пароль: P@ssw0rd
+
+Ставим пакеты:
+sudo apt install rsyslog
+
+Создаем директории:
+mkdir -p /home/yekt_admin/Desktop/Logs/YEKT-DB
+mkdir -p /home/yekt_admin/Desktop/Logs/YEKT-BILLING
+
+Редактируем конфиг:
+nano /etc/rsyslog.conf:
+module(load="imudp")
+input(type="imudp" port="514")
+$template ApacheLogsDB,"/home/yekt_admin/Desktop/Logs/YEKT-DB/%PROGRAMNAME%.log"
+if ($fromhost-ip == '192.168.2.150') and ($programname == 'apache2') then -?ApacheLogsDB
+
+$template ApacheLogsBilling,"/home/yekt_admin/Desktop/Logs/YEKT-BILLING/%PROGRAMNAME%.log"
+if ($fromhost-ip == '192.168.2.100') and ($programname == 'apache2') then -?ApacheLogsBilling
+
+Перезапускаем rsyslog:
+systemctl restart rsyslog
+
+12.2. На YEKT-DB и YEKT-BILLING:
+Стваим пакет:
+sudo apt install rsyslog
+
+Редактируем конфигурацию:
+nano /etc/rsyslog.conf:
+module(load="imfile")
+module(load="omfwd")
+input(type="imfile"
+      File="/var/log/apache2/access.log"
+      Tag="apache-access"
+      Severity="info"
+      Facility="local1")
+
+input(type="imfile"
+      File="/var/log/apache2/error.log"
+      Tag="apache-error"
+      Severity="error"
+      Facility="local1")
+
+*.* @192.168.2.200:514
+
+Перезапускаем:
+sudo systemctl restart rsyslog
+
+13. Веб-приложение на YEKT-RTR:
+Ставим пакеты:
+sudo apt install python3 python3-pip
+
+Создаем файлы:
+mkdir /flask_ site
+cd /flask_ site
+touch app.py
+mkdir templates
+cd templates
+touch login.html admin.html worker.html index.html
+
+Сертификат и ключ положить в /etc/ssl/flask_auth – flask.crt и flask.key (скорее всего один сертификат для всех вебов).
+
+Создаем виртуальное окружение для Flask в /flask_site:
+python3 -m venv venv
+source venv/bin/activation
+pip3 install flask
+
+13.1. Если только ввод PIN-кода:
+app.py:
+from flask import Flask, render_template, request, redirect, url_for, session
+
+app = Flask(__name__)
+app.secret_key = ‘P@ssw0rd’
+
+pin_codes = {
+	'ssl_admin': '159753486',
+	'ssl_worker': '951753426'
+}
+
+@app.route('/')
+def index():
+	return render_template('index.html')
+
+@app.route('/login/<role>', methods=['GET', 'POST'])
+def login(role):
+	error_message = None
+
+	if request.method == “POST”:
+		pin = request.form.get('pin')
+		user = 'ssl_admin' if role == 'admin' else 'ssl_worker'
+
+		if pin_codes.get(user) == pin:
+			session['role'] = role 
+			return redirect(url_for(role))
+		else:
+			error_message = "Authorization failed!"
+
+	return render_template('login.html', role=role, error_message=error_message)
+
+@app.route('/admin')
+def admin():
+	if session.get('role') == 'admin':
+		return render_template('admin.html')
+	return redirect(url_for('index'))
+
+@app.route('/worker')
+def worker():
+	if session.get('role') == 'worker':
+		return render_template('worker.html')
+	return redirect(url_for('index'))
+
+if __name__ == '__main__':
+	app.run(host='0.0.0.0', port=443, ssl_context=('/etc/ssl/flask_auth/flask.crt', '/etc/ssl/flask_auth/flask.key'))
+
+index.html:
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<title>Choosing a role</title>
+</head>
+<body>
+	<h2>Choose a role:</h2>
+	<ul>
+		<li><a href="{{ url_for('login', role='admin') }}">Click here for admin</a></li>
+		<li><a href="{{ url_for('login', role='worker') }}">Click here for worker</a></li>
+	</ul>
+</body>
+</html>
+
+login.html:
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<title>Authorization of the {{ role }}</title>
+</head>
+<body>
+	<h2>Authorization {{ role }}</h2>
+	<form method="post">
+		<label for="pin">Enter the PIN code:</label>
+		<input type="password" name="pin" required>
+		<button type="submit">Enter</button>
+	</form>
+	{% if error_message %}
+		<p style="color:red;">{{ error_message }}</p>
+	{% endif %}
+</body>
+</html>
+
+admin.html:
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<title>Administrator</title>
+</head>
+<body>
+	<h2>Hello Admins!</h2>
+</body>
+</html>
+
+worker.html:
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<title>Worker</title>
+</head>
+<body>
+	<h2>Hello Workers!</h2>
+</body>
+</html>
+
+Запускаем приложение:
+python3 app.py
+
+Добавляем в автозагрузку:
+nano /etc/systemd/system/flask-app.service:
+[Unit]
+Description=Flask Application
+After=network.target
+
+[Service]
+User=root
+WorkingDirectory=/flask_site
+ExecStart=/flask_site/venv/bin/python3 /flask_site/app.py
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+
+systemctl enable flask-app
+systemctl start flask-app
+
+13.2. Если авторизация по ЛОГИНУ и PIN-коду:
+Меняем app.py:
+from flask import Flask, render_template, request, redirect, url_for, session
+
+app = Flask(__name__)
+app.secret_key = ‘P@ssw0rd’
+
+pin_codes = {
+	'ssl_admin': '159753486',
+	'ssl_worker': '951753426'
+}
+
+@app.route('/')
+def index():
+	return render_template('index.html')
+
+@app.route('/login/<role>', methods=['GET', 'POST'])
+def login(role):
+	error_message = None
+
+	if request.method == “POST”:
+		username = request.form.get('username')
+		pin = request.form.get('pin')
+		user = None
+
+	if role == 'admin' and username == 'ssl_admin':
+		user = 'ssl_admin'
+	elif role == 'worker' and username == 'ssl_worker':
+		user = 'ssl_worker'
+
+	if user and pin_codes.get(user) == pin:
+		session['role'] = role 
+		return redirect(url_for(role))
+	else:
+		error_message = "Authorization failed!"
+
+	return render_template('login.html', role=role, error_message=error_message)
+
+@app.route('/admin')
+def admin():
+	if session.get('role') == 'admin':
+		return render_template('admin.html')
+	return redirect(url_for('index'))
+
+@app.route('/worker')
+def worker():
+	if session.get('role') == 'worker':
+		return render_template('worker.html')
+	return redirect(url_for('index'))
+
+if __name__ == '__main__':
+	app.run(host='0.0.0.0', port=443, ssl_context=('/etc/ssl/flask_auth/flask.crt', '/etc/ssl/flask_auth/flask.key'))
+
+Меняем login.html:
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<title>Authorization of the {{ role }}</title>
+</head>
+<body>
+	<h2>Authorization {{ role }}</h2>
+	<form method="post">
+		<label for="username">Enter the user's name:</label>
+		<input type="text" name="username" required><br><br>
+		<label for="pin">Enter the PIN code:</label>
+		<input type="password" name="pin" required><br><br>
+		<button type="submit">Enter</button>
+	</form>
+	{% if error_message %}
+		<p style="color:red;">{{ error_message }}</p>
+	{% endif %}
+</body>
+</html>
+
+14. DHCP-сервер на MSK-RTR:
+Ставим пакет:
+sudo apt install isc-dhcp-server
+
+Редактируем конфигаруцию:
+nano /etc/default/isc-dhcp-server:
+DHCPDv4_CONF=/etc/dhcp/dhcpd.conf
+INTERFACESv4="ens4" #Внутренний интерфейс
+
+nano /etc/dhcp/dhcpd.conf:
+subnet 192.168.1.0 netmask 255.255.255.0 {
+    range 192.168.1.50 192.168.1.100;
+    option routers 192.168.1.1;
+    option domain-name-servers 192.168.1.2, 77.88.8.1;
+    option domain-name "company.cool";
+    default-lease-time 600;
+    max-lease-time 7200;
+}
+
+Перезапускаем:
+sudo systemctl restart isc-dhcp-server
