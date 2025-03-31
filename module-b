@@ -496,12 +496,14 @@ netfilter-persistent save
 apt install nfs-kernel-server
 sudo mkdir -p /storage/it
 sudo mkdir -p /storage/office
-sudo groupadd IT
-sudo groupadd office
-sudo chown root:IT /storage/it
-sudo chown root:office /storage/office
-sudo chmod 1770 /storage/it
-sudo chmod 1770 /storage/office
+#sudo groupadd IT
+#sudo groupadd office
+#sudo chown root:IT /storage/it
+#sudo chown root:office /storage/office
+sudo chmod 1777 /storage/it
+sudo chmod 1777 /storage/office
+
+
 
 nano /etc/exports:
 /storage/it 192.168.1.0/24(rw,sync,no_subtree_check,root_squash)
