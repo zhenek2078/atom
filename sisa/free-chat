@@ -2,5 +2,24 @@
 CustomLog ${APACHE_LOG_DIR}/access.log combined
 ErrorLog ${APACHE_LOG_DIR}/error.log
 
+На фласке проверить, где собираются логи, если их нет, подключить:
+import logging
+
+# Настройка логирования
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
+
+@app.route('/')
+def index():
+    logger.info('Accessed index page')
+    return 'Hello, Flask!'
+
+Шаблон на сервере сбора логов:
+$template ApacheLogs,"/home/yekt_admin/Desktop/Logs/Apache2/Apache2.log"
+$template FlaskLogs,"/home/yekt_admin/Desktop/Logs/Flask/Flask.log"
+
+if $programname == 'apache2' then -?ApacheLogs
+if $programname == 'flask' then -?FlaskLogs
+
 Ссылка на список зеркал gpt:
 https://zalexanninev15.github.io/AI-ChatGPT/
