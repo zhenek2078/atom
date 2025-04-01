@@ -1,0 +1,6 @@
+Для сбора логов, глянуть есть ли логирование на Apache2 в /etc/apache2/sites-avaliable/000-default.conf:
+CustomLog ${APACHE_LOG_DIR}/access.log combined
+ErrorLog ${APACHE_LOG_DIR}/error.log
+
+Ссылка на список зеркал gpt:
+https://zalexanninev15.github.io/AI-ChatGPT/
