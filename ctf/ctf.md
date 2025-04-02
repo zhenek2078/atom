@@ -65,7 +65,7 @@ sudo docker compose up -d
 **Перебилдить:**
 
 ```
-sudo docker-compose up -d --build
+sudo docker compose up -d --build
 ```
 
 # Фикс уязв на Python:
