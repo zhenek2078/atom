@@ -10,7 +10,7 @@
 /etc/nginx/sites-available/*.conf
 ```
 
-**Flask - смотрим в app.py - в main при запуске Flask, передается путь до ключа***
+**Flask - смотрим в app.py - в main при запуске Flask, передается путь до ключа**
 
 **В докере:**
 
