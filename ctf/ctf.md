@@ -18,7 +18,7 @@
 docker exec -it <container_id> ls -l /etc/ssl/private/
 ```
 
-***Нашли ключ - добавляем в Wireshark:***
+**Нашли ключ - добавляем в Wireshark:**
 
 ```
 Edit → Preferences → Protocols → TLS, добавить ключ в раздел RSA Keys List
