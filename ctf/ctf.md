@@ -68,6 +68,13 @@ sudo docker compose up -d
 sudo docker compose up -d --build
 ```
 
+**Очистить кэш:**
+
+```
+docker-compose build --no-cache
+docker-compose up -d
+```
+
 # Фикс уязв на Python:
 
 ## SSTI:
