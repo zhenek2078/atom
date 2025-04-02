@@ -54,6 +54,20 @@ sudo docker compose up -d
 
 **Переходим в браузере: localhost:65000, выбираем порт, на котором крутится сервис**
 
+# Билд докер
+
+**Первый запуск:**
+
+```
+sudo docker compose up -d
+```
+
+**Перебилдить:**
+
+```
+sudo docker-compose up -d --build
+```
+
 # Фикс уязв на Python:
 
 ## SSTI:
