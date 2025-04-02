@@ -302,3 +302,101 @@ Paths.get("/safe_dir", filename).normalize();
 ```
 
 ✅ Используем normalize().
+
+# Зависимости
+
+## Python
+
+Перед использованием установите необходимые библиотеки:
+
+```
+pip install flask flask-wtf lxml
+```
+
+Импорты в коде:
+
+```
+from flask import Flask, request, render_template_string, redirect, Response
+from flask_wtf.csrf import CSRFProtect
+import sqlite3
+import html
+import os
+from lxml import etree
+```
+
+## PHP
+
+Для работы с PDO (SQLi) расширение PDO должно быть включено в php.ini:
+
+```
+extension=pdo_mysql
+```
+
+А для использования session_start() в CSRF защите:
+
+```
+session.auto_start = 1
+```
+
+Другие зависимости подключаются автоматически.
+
+## Go
+
+Установите зависимости с помощью go get:
+
+```
+go get github.com/gorilla/csrf
+```
+
+Импорты в коде:
+
+```
+import (
+    "database/sql"
+    _ "github.com/go-sql-driver/mysql"  // Для MySQL
+    "html"
+    "net/http"
+    "path/filepath"
+    "strings"
+    "github.com/gorilla/csrf"
+)
+```
+
+## Java
+
+Если используете Maven, добавьте в pom.xml:
+
+```
+<dependencies>
+    <!-- JDBC для SQL -->
+    <dependency>
+        <groupId>mysql</groupId>
+        <artifactId>mysql-connector-java</artifactId>
+        <version>8.0.33</version>
+    </dependency>
+
+    <!-- Apache Commons для XSS защиты -->
+    <dependency>
+        <groupId>org.apache.commons</groupId>
+        <artifactId>commons-text</artifactId>
+        <version>1.10.0</version>
+    </dependency>
+
+    <!-- Spring Security для CSRF -->
+    <dependency>
+        <groupId>org.springframework.security</groupId>
+        <artifactId>spring-security-web</artifactId>
+        <version>5.7.1</version>
+    </dependency>
+</dependencies>
+```
+
+Импорты в коде:
+
+```
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.PreparedStatement;
+import org.apache.commons.text.StringEscapeUtils;
+import java.nio.file.Paths;
+```
