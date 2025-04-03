@@ -75,7 +75,7 @@ docker-compose build --no-cache
 docker-compose up -d
 ```
 
-# Компиляция бинаря внутри джокера 
+# Компиляция бинаря внутри докера 
 
 **В DockerFile:**
 
