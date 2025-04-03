@@ -212,7 +212,7 @@ def safe_redirect_manual():
     return redirect(next_url)
 ```
 
-## Path travel:
+## Path traversal;
 
 **Библиотеки:**
 
