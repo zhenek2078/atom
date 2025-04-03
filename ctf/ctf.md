@@ -83,11 +83,11 @@ docker-compose up -d
 RUN gcc -std=c11 -o aes *.c -lreadline -lsqlite3
 ```
 
--ctd - версия С
+-std - версия С
 
 -o - название бинаря
 
--lreadline, -lsqllite3 - необходимые библиотеки (смотреть по ошибкам, на какие ругается)
+-lreadline, -lsqlite3 - необходимые библиотеки (смотреть по ошибкам, на какие ругается)
 
 # Фикс уязв на Python:
 
