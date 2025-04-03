@@ -75,6 +75,20 @@ docker-compose build --no-cache
 docker-compose up -d
 ```
 
+# Компиляция бинаря внутри джокера 
+
+**В DockerFile:**
+
+```
+RUN gcc -std=c11 -o aes *.c -lreadline -lsqlite3
+```
+
+-ctd - версия С
+
+-o - название бинаря
+
+-lreadline, -lsqllite3 - необходимые библиотеки (смотреть по ошибкам, на какие ругается)
+
 # Фикс уязв на Python:
 
 ## SSTI:
